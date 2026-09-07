@@ -7,6 +7,7 @@ import { SchemeReference } from './views/SchemeReference'
 import { SettingsView } from './views/SettingsView'
 import { SignIn } from './views/SignIn'
 import { Icon } from './components/ui'
+import { Logo } from './components/Logo'
 import { AuthProvider, useAuth } from './lib/auth'
 import { go, useRoute } from './lib/route'
 import { StoreProvider, useStore } from './lib/store'
@@ -21,7 +22,7 @@ const NAV = [
 function Chrome() {
   const route = useRoute()
   const { roles, storage } = useStore()
-  const { shared, signOut } = useAuth()
+  const { username, mode, signOut } = useAuth()
   // The scoring screen manages its own full-height layout.
   const fullBleed = route.name === 'evaluate'
 
@@ -31,19 +32,13 @@ function Chrome() {
         <div className="flex h-13 items-center gap-4 px-4">
           <button
             onClick={() => go('/')}
-            className="flex items-center gap-2.5 text-left"
+            className="flex items-center gap-3 text-left"
             aria-label="Role sizing home"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink font-display text-[12px] font-semibold text-gold">
-              26
-            </span>
-            <span>
-              <span className="block font-display text-[13.5px] leading-tight font-semibold text-ink">
-                Role Sizing
-              </span>
-              <span className="block text-[10.5px] leading-tight text-faint">
-                TwentySix Consulting
-              </span>
+            <Logo height={22} />
+            <span className="hidden h-6 w-px bg-line sm:block" />
+            <span className="hidden font-display text-[13.5px] leading-tight font-semibold text-ink sm:block">
+              Role Sizing
             </span>
           </button>
 
@@ -87,13 +82,13 @@ function Chrome() {
               <Icon name="plus" size={14} />
               Add a role
             </button>
-            {shared && (
+            {mode !== 'none' && (
               <button
                 onClick={() => void signOut()}
-                title="Sign out of the shared library"
-                className="rounded-lg p-1.5 text-muted hover:bg-line-soft hover:text-ink"
-                aria-label="Sign out"
+                title={username ? `Signed in as ${username} — sign out` : 'Sign out'}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-muted hover:bg-line-soft hover:text-ink"
               >
+                <span className="hidden md:inline">{username}</span>
                 <Icon name="signout" size={15} />
               </button>
             )}

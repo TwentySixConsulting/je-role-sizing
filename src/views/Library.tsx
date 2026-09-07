@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CornerstoneComposition, FactorProfile } from '../components/charts'
 import { JdViewer } from '../components/JdViewer'
+import { OrganisationPicker } from '../components/OrganisationPicker'
 import { Badge, Button, EmptyState, Icon, Input, Modal, Select } from '../components/ui'
 import { exportCsv, exportJson, exportRationaleCsv, readImport } from '../lib/exportImport'
 import { go } from '../lib/route'
@@ -16,8 +17,16 @@ const SORT_LABELS: Record<Sort, string> = {
   'points-desc': 'Most points first',
   'points-asc': 'Fewest points first',
   title: 'Job title A–Z',
+  added: 'Recently added',
   updated: 'Recently updated',
 }
+
+/** Short date for the list, full date for the expanded panel. */
+const shortDate = (ms: number) =>
+  new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+
+const longDate = (ms: number) =>
+  new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 
 function StatusBadge({ role, complete }: { role: Role; complete: boolean }) {
   if (role.status === 'moderated') return <Badge tone="good">Moderated</Badge>
@@ -27,7 +36,8 @@ function StatusBadge({ role, complete }: { role: Role; complete: boolean }) {
 }
 
 export function Library() {
-  const { roles, settings, saveSettings, deleteRole, importRoles, loading, error } = useStore()
+  const { roles, settings, saveSettings, deleteRole, updateRole, importRoles, loading, error } =
+    useStore()
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [collapsedOrgs, setCollapsedOrgs] = useState<Set<string>>(new Set())
@@ -64,6 +74,8 @@ export function Library() {
             return a.score.total - b.score.total || a.role.title.localeCompare(b.role.title)
           case 'title':
             return a.role.title.localeCompare(b.role.title)
+          case 'added':
+            return b.role.createdAt - a.role.createdAt
           case 'updated':
             return b.role.updatedAt - a.role.updatedAt
           default:
@@ -75,6 +87,11 @@ export function Library() {
     sorted.sort((a, b) => a.org.localeCompare(b.org))
     return sorted
   }, [roles, query, sort])
+
+  const knownOrgs = useMemo(
+    () => [...new Set(roles.map((r) => r.organisation).filter(Boolean))].sort(),
+    [roles],
+  )
 
   const totals = useMemo(() => {
     const complete = roles.filter((r) => scoreRole(r).complete).length
@@ -237,6 +254,17 @@ export function Library() {
 
                 {!collapsed && (
                   <div className="overflow-hidden rounded-xl border border-line bg-paper">
+                    <div className="flex items-center gap-3 border-b border-line bg-cream/60 px-3 py-1.5 text-[10px] font-semibold tracking-[0.06em] text-faint uppercase">
+                      <span className="w-6 text-center">#</span>
+                      <span className="w-3" />
+                      <span className="min-w-0 flex-1">Role</span>
+                      <span className="hidden w-32 shrink-0 sm:block">Progress</span>
+                      <span className="hidden w-24 shrink-0 lg:block">Added</span>
+                      <span className="w-24 shrink-0 text-right">Points</span>
+                      <span className="hidden w-28 shrink-0 md:block">Status</span>
+                      <span className="w-[4.6rem] shrink-0" />
+                      <span className="w-[1.9rem] shrink-0" />
+                    </div>
                     {rows.map(({ role, score }, i) => {
                       const band = score.complete ? bandFor(score.total, settings.bands) : undefined
                       const open = expanded === role.id
@@ -286,6 +314,16 @@ export function Library() {
                               </div>
                             </div>
 
+                            <div className="hidden w-24 shrink-0 lg:block">
+                              <div
+                                className="text-[11.5px] text-muted"
+                                title={`Added ${longDate(role.createdAt)}`}
+                              >
+                                {shortDate(role.createdAt)}
+                              </div>
+                              <div className="mt-0.5 text-[10.5px] text-faint">added</div>
+                            </div>
+
                             <div className="w-24 shrink-0 text-right">
                               <div className="tnum text-[15px] leading-none font-bold text-ink">
                                 {fmtPoints(score.total)}
@@ -295,13 +333,22 @@ export function Library() {
                               </div>
                             </div>
 
-                            <div className="hidden w-32 shrink-0 md:block">
+                            <div className="hidden w-28 shrink-0 md:block">
                               <StatusBadge role={role} complete={score.complete} />
                             </div>
 
                             <Button size="sm" variant="secondary" onClick={() => go(`/evaluate/${role.id}`)}>
                               {score.complete ? 'Review' : 'Continue'}
                             </Button>
+
+                            <button
+                              onClick={() => setConfirmDelete(role)}
+                              aria-label={`Delete ${role.title || 'this role'}`}
+                              title="Delete this role"
+                              className="shrink-0 rounded-lg p-1.5 text-faint hover:bg-red-50 hover:text-danger"
+                            >
+                              <Icon name="trash" size={15} />
+                            </button>
                           </div>
 
                           {open && (
@@ -348,6 +395,19 @@ export function Library() {
                                     </p>
                                   </div>
                                 )}
+                                <div className="rounded-xl border border-line bg-paper p-3.5">
+                                  <OrganisationPicker
+                                    value={role.organisation}
+                                    onChange={(next) =>
+                                      void updateRole(role.id, { organisation: next })
+                                    }
+                                    known={knownOrgs}
+                                    label="Organisation"
+                                    hint="changing this moves the role"
+                                    compact
+                                  />
+                                </div>
+
                                 <div className="flex flex-wrap gap-2">
                                   <Button size="sm" onClick={() => go(`/evaluate/${role.id}`)}>
                                     Open scoring
@@ -361,15 +421,35 @@ export function Library() {
                                     Delete
                                   </Button>
                                 </div>
+                                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11.5px]">
+                                  <div>
+                                    <dt className="text-[10px] font-semibold tracking-[0.06em] text-faint uppercase">
+                                      Added
+                                    </dt>
+                                    <dd className="text-ink-soft">{longDate(role.createdAt)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="text-[10px] font-semibold tracking-[0.06em] text-faint uppercase">
+                                      Last updated
+                                    </dt>
+                                    <dd className="text-ink-soft">{longDate(role.updatedAt)}</dd>
+                                  </div>
+                                  {role.completedAt && (
+                                    <div>
+                                      <dt className="text-[10px] font-semibold tracking-[0.06em] text-faint uppercase">
+                                        Fully scored
+                                      </dt>
+                                      <dd className="text-ink-soft">{longDate(role.completedAt)}</dd>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <dt className="text-[10px] font-semibold tracking-[0.06em] text-faint uppercase">
+                                      Scored by
+                                    </dt>
+                                    <dd className="text-ink-soft">{role.evaluator || '—'}</dd>
+                                  </div>
+                                </dl>
                                 <p className="text-[11px] text-faint">
-                                  {role.evaluator && `Scored by ${role.evaluator} · `}
-                                  Last updated{' '}
-                                  {new Date(role.updatedAt).toLocaleDateString('en-GB', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  })}
-                                  {' · '}
                                   {FACTORS.filter((f) => role.rationale[f.id]).length} of{' '}
                                   {FACTORS.length} levels have a written reason
                                 </p>

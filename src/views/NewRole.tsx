@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
+import { OrganisationPicker } from '../components/OrganisationPicker'
 import { Badge, Button, Field, Icon, Input, TextArea } from '../components/ui'
 import { extractJobDescription, guessTitle, isSupported, type ExtractResult } from '../lib/extract'
 import { go } from '../lib/route'
+import { useAuth } from '../lib/auth'
 import { useStore } from '../lib/store'
 
 interface Staged {
@@ -20,6 +22,9 @@ function prettySize(bytes?: number) {
 
 export function NewRole() {
   const { roles, createRole, settings } = useStore()
+  const { username } = useAuth()
+  // Whoever is signed in gets the credit unless they have set a name in Settings.
+  const evaluator = settings.evaluator || username
   const [mode, setMode] = useState<'upload' | 'type'>('upload')
   const [organisation, setOrganisation] = useState('')
   const [staged, setStaged] = useState<Staged[]>([])
@@ -88,7 +93,7 @@ export function NewRole() {
             organisation: organisation.trim(),
             title: s.title.trim() || s.file.name.replace(/\.[^.]+$/, ''),
             functionArea: s.functionArea.trim(),
-            evaluator: settings.evaluator,
+            evaluator,
             jd: {
               source: 'file',
               fileName: s.result.fileName,
@@ -120,7 +125,7 @@ export function NewRole() {
         reportsTo: manual.reportsTo.trim(),
         clientGrade: manual.clientGrade.trim(),
         salary: manual.salary.trim(),
-        evaluator: settings.evaluator,
+        evaluator,
         jd: manual.text.trim()
           ? { source: 'pasted', text: manual.text.trim() }
           : { source: 'none', text: '' },
@@ -149,20 +154,8 @@ export function NewRole() {
         it beside the scheme while you score. Nothing leaves this browser.
       </p>
 
-      <div className="mb-5">
-        <Field label="Organisation" hint="Roles are grouped and ranked within an organisation">
-          <Input
-            list="known-orgs"
-            value={organisation}
-            onChange={(e) => setOrganisation(e.target.value)}
-            placeholder="e.g. Brighton Technologies"
-          />
-        </Field>
-        <datalist id="known-orgs">
-          {knownOrgs.map((o) => (
-            <option key={o} value={o} />
-          ))}
-        </datalist>
+      <div className="mb-5 rounded-xl border border-line bg-paper p-4">
+        <OrganisationPicker value={organisation} onChange={setOrganisation} known={knownOrgs} />
       </div>
 
       <div className="mb-4 flex rounded-xl border border-line bg-paper p-1">

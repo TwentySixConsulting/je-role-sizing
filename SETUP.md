@@ -1,118 +1,109 @@
-# Setup: shared team storage and a link
+# Setup
 
-The app is finished and works either way:
+## Sign-in without a backend (what the live site uses now)
 
-- **No Supabase configured** → browser-only storage, a "Local copy" badge in the
-  header, nothing shared.
-- **Supabase configured** → one shared team library, a password box on load, and
-  changes appearing live for whoever else has it open.
+Usernames and passwords are baked in at build time from a repository secret.
 
-These are the steps to get the second one, plus a URL to send the team.
+```bash
+./scripts/make-user-hashes.sh millie:somepassword jane:anotherpassword
+gh secret set VITE_APP_USERS --repo TwentySixConsulting/je-role-sizing --body '<the printed line>'
+```
+
+Push anything to `main` (or run the workflow manually) and the new credentials
+are live. Passwords are stored as SHA-256 hashes, so the built JavaScript does
+not contain them in the clear.
+
+**What this is and is not.** A static site has to ship whatever it checks
+against, so a determined person can read past this. It stops the tool being
+casually usable by anyone who stumbles on the URL. It does not protect the
+job descriptions, because there is nothing server-side to enforce it. For that,
+read on.
 
 ---
 
-## 1. Choose a Supabase project
+## Shared team storage, and a login that actually holds
 
-You already have a project, `lcvxhbczeougiflcywqt`, but it is the **TwentySix
-Benefits** one (six benefits tables). Everything here is namespaced `je_`, so it
-would sit alongside them without colliding.
+This is the step that gives every consultant one shared library **and** turns
+the password into something enforced by a database rather than by the page.
 
-**A separate project is worth it.** Role sizing holds confidential client job
-descriptions, which is a different class of data from public benefits research,
-and keeping them apart means a key rotation, a paused project or a mistake on
-one tool cannot touch the other.
+You already have a Supabase project, `lcvxhbczeougiflcywqt`, but it is the
+**TwentySix Benefits** one. Everything here is namespaced `je_`, so it can sit
+alongside those tables safely. A separate project is tidier — role sizing holds
+confidential client job descriptions, and keeping them apart means a key
+rotation or a mistake on one tool cannot touch the other — but reusing the
+existing one works and needs no new account.
 
-```bash
-supabase login          # one-time, opens a browser
-supabase projects create twentysix-role-sizing --org-id <your-org-id> --region eu-west-2
-supabase projects list   # note the new project ref
-```
+### 1. Create the tables
 
-To reuse the Benefits project instead, skip straight to step 2 with its ref.
-
-## 2. Create the tables
-
-Either paste `supabase/migrations/0001_je_role_sizing.sql` into the project's
-**SQL Editor** and run it, or:
-
-```bash
-supabase link --project-ref <ref>
-supabase db push
-```
+No CLI login needed. In the Supabase dashboard for whichever project:
+**SQL Editor → New query**, paste the whole of
+`supabase/migrations/0001_je_role_sizing.sql`, and run it.
 
 That creates `je_roles`, `je_settings`, a private `je-job-descriptions` storage
 bucket, and the row level security policies. It is additive and safe to re-run.
 
-## 3. Create the shared team account
+### 2. Create an account per consultant
 
-The password box signs in one account. Create it with the project's service role
-key (Project Settings → API):
+From **Project Settings → API**, take the URL and the service role key:
 
 ```bash
 SUPABASE_URL=https://<ref>.supabase.co \
 SUPABASE_SERVICE_ROLE_KEY=<service role key> \
-TEAM_EMAIL=rolesizing@twentysixconsulting.co.uk \
-./scripts/create-team-user.sh 'the-password-you-want'
+./scripts/create-users.sh millie:somepassword jane:anotherpassword
 ```
 
-Re-run it any time to change the password. The service role key must never go
-into the app or into Vercel's client-side variables — it bypasses row level
-security. `.gitignore` already excludes `.env.local` and `.vercel`.
+Consultants then sign in with just `millie`. The script completes it to
+`millie@twentysixconsulting.co.uk` behind the scenes, which is what
+`VITE_TEAM_EMAIL_DOMAIN` controls.
 
-## 4. Point the app at it
+Keep the service role key out of the app and out of repository secrets — it
+bypasses row level security.
+
+### 3. Point the deployed site at it
+
+From **Project Settings → API**, take the URL and the *publishable* (anon) key:
 
 ```bash
-cp .env.example .env.local
-# fill in VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_TEAM_EMAIL
-npm run dev
+gh secret set VITE_SUPABASE_URL      --repo TwentySixConsulting/je-role-sizing --body 'https://<ref>.supabase.co'
+gh secret set VITE_SUPABASE_ANON_KEY --repo TwentySixConsulting/je-role-sizing --body '<anon key>'
+gh secret delete VITE_APP_USERS      --repo TwentySixConsulting/je-role-sizing
+gh workflow run deploy.yml           --repo TwentySixConsulting/je-role-sizing
 ```
 
-The password box should appear. Sign in and add a role; you should see it in the
-Supabase table editor.
+Removing `VITE_APP_USERS` is deliberate: with Supabase set, sign-in switches to
+real accounts and the build-time list is no longer used.
 
-## 5. Deploy
+### 4. Check it
 
-```bash
-vercel login            # your existing token has expired
-vercel link
-vercel env add VITE_SUPABASE_URL      production
-vercel env add VITE_SUPABASE_ANON_KEY production
-vercel env add VITE_TEAM_EMAIL        production
-vercel --prod
-```
-
-That prints the URL to send the team. `vercel.json` already sets the SPA rewrite
-and `noindex` so the tool never turns up in a search result.
+Open the link, sign in, add a role, and confirm the row appears in the Supabase
+table editor. Open the link in a second browser as a different consultant and
+you should see the same role.
 
 ---
 
-## How the password actually protects anything
+## Why the password becomes real once step 2 is done
 
-The `anon` key ships in the built JavaScript, as it does in any Supabase app, so
-it cannot be the thing keeping people out. It isn't:
+The publishable key ships in the built JavaScript, as it does in any Supabase
+app, so it cannot be what keeps people out. It isn't:
 
 - `je_roles` and `je_settings` have row level security on, with policies granted
-  only to the `authenticated` role. There is **no policy for `anon`**, so the key
-  on its own returns nothing.
-- The storage bucket is private, with the same `authenticated`-only policy.
-- The password is the shared account's Supabase Auth password. It is checked by
-  Supabase, never by the page, so it cannot be bypassed by editing the
-  JavaScript.
+  only to the `authenticated` role. There is **no policy for `anon`**, so the
+  key on its own returns nothing.
+- The storage bucket holding the original Word and PDF files is private, with
+  the same `authenticated`-only policy.
+- Passwords are checked by Supabase, never by the page, so editing the
+  JavaScript gets you nowhere.
 
-What it does not do: everyone shares one account, so the report's "evaluated by"
-field is whatever each consultant typed in Settings, on trust. If you later need
-that to be provably theirs, move to individual logins — the change is one
-policy and swapping the password box for an email field.
+Individual accounts also mean the "scored by" name on a report is the account
+that did the work, rather than whatever someone typed in Settings.
 
-## Things worth knowing
+## Things worth knowing once it is shared
 
-- **Deleting is for everyone.** "Delete everything" in Settings clears the shared
-  library. Take a Backup first.
+- **Deleting is for everyone.** "Delete everything" in Settings clears the
+  shared library. Take a Backup first.
 - **Two people, same role, same moment.** Writes only touch the columns that
   changed, so two consultants on different roles, or on different factors of the
   same role, never overwrite each other. Two people changing the *same* factor
-  at the same second is last-write-wins.
-- **Evaluator name and list sort stay local** to each consultant. Contribution
-  bands are shared, so changing them changes them for the team.
-- **Backups still work**, and are the way to hand a subset of roles to someone
-  outside the team or to keep a point-in-time copy.
+  in the same second is last-write-wins.
+- **Contribution bands are shared**; the evaluator name and list sort stay per
+  person, in their own browser.

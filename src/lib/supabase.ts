@@ -4,11 +4,11 @@ const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 /**
- * The single shared team account. Consultants only ever type the password; this
- * is the account it signs in. Not a secret - the password is what matters.
+ * Consultants type a username; Supabase Auth signs in an address, so a bare
+ * username is completed with this domain. Not a secret.
  */
-export const TEAM_EMAIL =
-  (import.meta.env.VITE_TEAM_EMAIL as string | undefined) ?? 'rolesizing@twentysixconsulting.co.uk'
+export const TEAM_EMAIL_DOMAIN =
+  (import.meta.env.VITE_TEAM_EMAIL_DOMAIN as string | undefined) ?? 'twentysixconsulting.co.uk'
 
 export const SUPABASE_CONFIGURED = Boolean(URL && KEY)
 

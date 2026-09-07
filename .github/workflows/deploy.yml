@@ -27,11 +27,13 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          # Absent in this repo unless the secrets are set, in which case the
-          # build falls back to browser-only storage. See SETUP.md.
+          # Sign-in. VITE_APP_USERS is username:sha256 pairs and gates the site
+          # without a backend; the Supabase pair replaces it with real,
+          # server-enforced accounts and a shared library. See SETUP.md.
+          VITE_APP_USERS: ${{ secrets.VITE_APP_USERS }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_TEAM_EMAIL: ${{ secrets.VITE_TEAM_EMAIL }}
+          VITE_TEAM_EMAIL_DOMAIN: ${{ secrets.VITE_TEAM_EMAIL_DOMAIN }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

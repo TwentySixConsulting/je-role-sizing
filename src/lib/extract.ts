@@ -177,15 +177,27 @@ export function guessTitle(text: string): string {
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
-    .slice(0, 15)
+    .slice(0, 20)
 
-  const LABEL = /^(job\s*title|role\s*title|post\s*title|position|job|role|post|title)\s*[:\-\u2013]\s*/i
-  const NOISE = /^(job description|role profile|role description|job profile|about us|person specification|introduction)$/i
+  const LABEL_WORDS = 'job\\s*title|role\\s*title|post\\s*title|job\\s*role|position|title|role|post|job'
+  const LABELLED = new RegExp(`^(${LABEL_WORDS})\\s*[:\\-\u2013]\\s*`, 'i')
+  const BARE_LABEL = new RegExp(`^(${LABEL_WORDS})\\s*[:\\-\u2013]?$`, 'i')
+  const NOISE =
+    /^(job description|role profile|role description|job profile|about us|person specification|job description (and|&) person specification|introduction|purpose)$/i
 
-  const labelled = lines.find((l) => LABEL.test(l) && l.replace(LABEL, '').trim().length > 1)
-  if (labelled) {
-    const v = labelled.replace(LABEL, '').trim()
-    if (v.length > 1 && v.length < 90) return tidyTitle(v)
+  // "Job Title: Warden" - label and value on one line.
+  for (const line of lines) {
+    if (!LABELLED.test(line)) continue
+    const v = line.replace(LABELLED, '').trim()
+    if (v.length > 1 && v.length < 90 && !NOISE.test(v)) return tidyTitle(v)
+  }
+
+  // Word job descriptions are usually tables, and a table flattens to the
+  // label on one line and its value on the next.
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!BARE_LABEL.test(lines[i])) continue
+    const v = lines[i + 1]
+    if (v.length > 1 && v.length < 90 && !NOISE.test(v) && !BARE_LABEL.test(v)) return tidyTitle(v)
   }
 
   const plausible = lines.find((l) => l.length > 2 && l.length < 70 && !NOISE.test(l))

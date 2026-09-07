@@ -15,43 +15,6 @@ function termRegex(terms: string[]): RegExp | null {
   return new RegExp(`\\b(${sorted.map(escapeRe).join('|')})`, 'gi')
 }
 
-type Piece = { text: string; kind: 'plain' | 'hit' | 'cue'; hitIndex?: number }
-
-/** Splits a line into search hits, then cue matches inside what is left. */
-function splitLine(line: string, search: RegExp | null, cues: RegExp | null, counter: { n: number }): Piece[] {
-  const bySearch: Piece[] = []
-  if (search) {
-    let last = 0
-    for (const m of line.matchAll(search)) {
-      const i = m.index ?? 0
-      if (i > last) bySearch.push({ text: line.slice(last, i), kind: 'plain' })
-      bySearch.push({ text: m[0], kind: 'hit', hitIndex: counter.n++ })
-      last = i + m[0].length
-    }
-    if (last < line.length) bySearch.push({ text: line.slice(last), kind: 'plain' })
-  } else {
-    bySearch.push({ text: line, kind: 'plain' })
-  }
-
-  if (!cues) return bySearch
-  const out: Piece[] = []
-  for (const piece of bySearch) {
-    if (piece.kind !== 'plain') {
-      out.push(piece)
-      continue
-    }
-    let last = 0
-    for (const m of piece.text.matchAll(cues)) {
-      const i = m.index ?? 0
-      if (i > last) out.push({ text: piece.text.slice(last, i), kind: 'plain' })
-      out.push({ text: m[0], kind: 'cue' })
-      last = i + m[0].length
-    }
-    if (last < piece.text.length) out.push({ text: piece.text.slice(last), kind: 'plain' })
-  }
-  return out
-}
-
 function looksLikeHeading(line: string): boolean {
   const t = line.trim()
   if (t.length < 3 || t.length > 70) return false
@@ -59,6 +22,105 @@ function looksLikeHeading(line: string): boolean {
   const letters = t.replace(/[^A-Za-z]/g, '')
   if (letters.length > 2 && letters === letters.toUpperCase()) return true
   return /:$/.test(t)
+}
+
+/** Plain text rendered as paragraphs, for PDFs and pasted descriptions. */
+function textToHtml(text: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return text
+    .replace(/\n{2,}/g, '\n\n')
+    .split('\n')
+    .map((line) => {
+      if (!line.trim()) return ''
+      return looksLikeHeading(line)
+        ? `<h3>${escape(line.trim())}</h3>`
+        : `<p>${escape(line)}</p>`
+    })
+    .filter(Boolean)
+    .join('')
+}
+
+/**
+ * Mammoth emits a restricted element set with no scripts, but the HTML has
+ * been through a file we did not write, so strip anything executable before it
+ * reaches the DOM.
+ */
+function sanitise(html: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+  const root = doc.body.firstElementChild
+  if (!root) return ''
+  root.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((n) => n.remove())
+  root.querySelectorAll('*').forEach((el) => {
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase()
+      const value = attr.value.trim().toLowerCase()
+      const dangerousHref =
+        (name === 'href' || name === 'src') &&
+        !/^(https?:|mailto:|data:image\/|#|\/|$)/.test(value)
+      if (name.startsWith('on') || dangerousHref) el.removeAttribute(attr.name)
+    }
+  })
+  return root.innerHTML
+}
+
+/** Wraps matches inside already-rendered HTML, so formatting survives. */
+function highlight(root: HTMLElement, search: RegExp | null, cues: RegExp | null): number {
+  if (!search && !cues) return 0
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.parentElement?.closest('mark') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  })
+  const textNodes: Text[] = []
+  while (walker.nextNode()) {
+    const n = walker.currentNode as Text
+    if (n.nodeValue && n.nodeValue.trim()) textNodes.push(n)
+  }
+
+  let hits = 0
+  for (const node of textNodes) {
+    const value = node.nodeValue ?? ''
+    // Search hits win over cue words wherever they overlap.
+    const spans: { start: number; end: number; kind: 'hit' | 'cue' }[] = []
+    if (search) {
+      search.lastIndex = 0
+      for (const m of value.matchAll(search)) {
+        spans.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, kind: 'hit' })
+      }
+    }
+    if (cues) {
+      cues.lastIndex = 0
+      for (const m of value.matchAll(cues)) {
+        const start = m.index ?? 0
+        const end = start + m[0].length
+        if (!spans.some((s) => start < s.end && end > s.start)) {
+          spans.push({ start, end, kind: 'cue' })
+        }
+      }
+    }
+    if (!spans.length) continue
+    spans.sort((a, b) => a.start - b.start)
+
+    const frag = document.createDocumentFragment()
+    let cursor = 0
+    for (const span of spans) {
+      if (span.start > cursor) frag.append(value.slice(cursor, span.start))
+      const mark = document.createElement('mark')
+      mark.textContent = value.slice(span.start, span.end)
+      if (span.kind === 'hit') {
+        mark.className = 'jd-hit'
+        mark.dataset.hit = String(hits++)
+      } else {
+        mark.className = 'jd-cue'
+      }
+      frag.append(mark)
+      cursor = span.end
+    }
+    if (cursor < value.length) frag.append(value.slice(cursor))
+    node.parentNode?.replaceChild(frag, node)
+  }
+  return hits
 }
 
 export function JdViewer({
@@ -73,39 +135,50 @@ export function JdViewer({
 }) {
   const [search, setSearch] = useState('')
   const [showCues, setShowCues] = useState(true)
-  const [view, setView] = useState<'text' | 'formatted'>('text')
+  const [plain, setPlain] = useState(false)
   const [activeHit, setActiveHit] = useState(0)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const [hitCount, setHitCount] = useState(0)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
-  const searchRe = useMemo(() => (search.trim().length > 1 ? termRegex([search.trim()]) : null), [search])
+  const searchRe = useMemo(
+    () => (search.trim().length > 1 ? termRegex([search.trim()]) : null),
+    [search],
+  )
   const cueRe = useMemo(() => {
     if (!showCues || !activeFactorId) return null
     return termRegex(FACTOR_CUES[activeFactorId] ?? [])
   }, [showCues, activeFactorId])
 
-  const { blocks, hitCount } = useMemo(() => {
-    const counter = { n: 0 }
-    // Word exports put a blank line between every paragraph; collapse runs of
-    // them so the description reads tightly rather than as a sparse column.
-    const lines = jd.text.replace(/\n{2,}/g, '\n\n').split('\n')
-    const out = lines.map((line) => ({
-      heading: looksLikeHeading(line),
-      blank: !line.trim(),
-      pieces: line.trim() ? splitLine(line, searchRe, cueRe, counter) : [],
-    }))
-    return { blocks: out, hitCount: counter.n }
-  }, [jd.text, searchRe, cueRe])
+  // Word job descriptions are very often laid out as tables. Rendering the
+  // converted HTML keeps those tables, headings and lists intact; the plain
+  // text version of the same document reads as one long run-on.
+  const richHtml = useMemo(() => (jd.html ? sanitise(jd.html) : null), [jd.html])
+  const html = useMemo(
+    () => (richHtml && !plain ? richHtml : textToHtml(jd.text)),
+    [richHtml, plain, jd.text],
+  )
 
-  // Keep the active hit in range as the query changes, and scroll to it.
+  // Render, then mark up. Re-rendering from the source HTML each time is what
+  // keeps repeated searches from nesting marks inside one another.
+  useEffect(() => {
+    const root = bodyRef.current
+    if (!root) return
+    root.innerHTML = html
+    setHitCount(highlight(root, searchRe, cueRe))
+  }, [html, searchRe, cueRe])
+
   useEffect(() => {
     setActiveHit(0)
   }, [search])
 
   useEffect(() => {
     if (!hitCount) return
-    const el = scrollRef.current?.querySelector(`[data-hit="${activeHit}"]`)
+    const marks = bodyRef.current?.querySelectorAll('mark[data-hit]')
+    marks?.forEach((m) => m.classList.remove('jd-hit-active'))
+    const el = marks?.[activeHit]
+    el?.classList.add('jd-hit-active')
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [activeHit, hitCount])
+  }, [activeHit, hitCount, html])
 
   const step = (dir: 1 | -1) => {
     if (!hitCount) return
@@ -113,10 +186,10 @@ export function JdViewer({
   }
 
   const cueCount = activeFactorId ? (FACTOR_CUES[activeFactorId]?.length ?? 0) : 0
+  const empty = !jd.text && !jd.html
 
   return (
     <div className={`flex min-h-0 flex-col ${className}`}>
-      {/* Toolbar */}
       <div className="no-print flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
         <div className="relative min-w-[9rem] flex-1">
           <Icon
@@ -161,7 +234,7 @@ export function JdViewer({
           </div>
         )}
 
-        {activeFactorId && cueCount > 0 && view === 'text' && (
+        {activeFactorId && cueCount > 0 && (
           <button
             onClick={() => setShowCues((v) => !v)}
             title="Tint words in the description that often relate to this factor. A reading aid only - it never affects the score."
@@ -175,75 +248,32 @@ export function JdViewer({
           </button>
         )}
 
-        {jd.html && (
-          <div className="flex rounded-lg border border-line p-0.5">
-            {(['text', 'formatted'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`rounded-md px-2 py-1 text-[11px] font-medium capitalize ${
-                  view === v ? 'bg-ink text-white' : 'text-muted hover:text-ink'
-                }`}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+        {richHtml && (
+          <button
+            onClick={() => setPlain((v) => !v)}
+            title={
+              plain
+                ? 'Show the description as it is laid out in the original document'
+                : 'Strip the formatting and show plain text'
+            }
+            className={`rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors ${
+              plain
+                ? 'border-line bg-line-soft text-ink'
+                : 'border-line bg-paper text-muted hover:bg-line-soft'
+            }`}
+          >
+            {plain ? 'Plain text' : 'As laid out'}
+          </button>
         )}
       </div>
 
-      {/* Body */}
-      <div ref={scrollRef} className="scroll-slim min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {!jd.text && !jd.html ? (
+      <div className="scroll-slim min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {empty ? (
           <p className="py-10 text-center text-[13px] text-muted">
-            No job description stored for this role. Add one from the role's details.
+            No job description stored for this role.
           </p>
-        ) : view === 'formatted' && jd.html ? (
-          <div
-            className="jd-html max-w-[68ch] text-[13px] leading-[1.75] text-ink-soft [&_h1]:mt-4 [&_h1]:mb-1.5 [&_h1]:font-display [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:text-ink [&_h2]:mt-4 [&_h2]:mb-1.5 [&_h2]:font-display [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:text-ink [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:font-semibold [&_h3]:text-ink [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_strong]:font-semibold [&_strong]:text-ink [&_table]:mb-3 [&_table]:w-full [&_td]:border [&_td]:border-line [&_td]:px-2 [&_td]:py-1 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
-            // The HTML comes from mammoth's conversion of a .docx the
-            // consultant chose to upload; mammoth emits a fixed, restricted
-            // element set (headings, lists, tables, emphasis) and no scripts.
-            dangerouslySetInnerHTML={{ __html: jd.html }}
-          />
         ) : (
-          <div className="max-w-[68ch] text-[13px] leading-[1.75] text-ink-soft">
-            {blocks.map((b, i) =>
-              b.blank ? (
-                <div key={i} className="h-2" />
-              ) : (
-                <p
-                  key={i}
-                  className={
-                    b.heading
-                      ? 'mt-4 mb-1 font-display text-[13px] font-semibold text-ink first:mt-0'
-                      : 'mb-1.5'
-                  }
-                >
-                  {b.pieces.map((p, j) =>
-                    p.kind === 'hit' ? (
-                      <mark
-                        key={j}
-                        data-hit={p.hitIndex}
-                        className={`jd-hit ${p.hitIndex === activeHit ? 'jd-hit-active' : ''}`}
-                      >
-                        {p.text}
-                      </mark>
-                    ) : p.kind === 'cue' ? (
-                      <span
-                        key={j}
-                        className="rounded-[2px] bg-gold/18 px-[1px] text-ink underline decoration-gold/60 decoration-1 underline-offset-2"
-                      >
-                        {p.text}
-                      </span>
-                    ) : (
-                      <span key={j}>{p.text}</span>
-                    ),
-                  )}
-                </p>
-              ),
-            )}
-          </div>
+          <div ref={bodyRef} className="jd-body max-w-[70ch]" />
         )}
       </div>
     </div>

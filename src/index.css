@@ -12,6 +12,8 @@
   --color-gold: #c9a84c;
   --color-gold-deep: #a2842f;
   --color-gold-wash: #f6efdb;
+  /* From the current TwentySix mark. */
+  --color-brand: #3880c4;
   --color-cream: #faf9f6;
   --color-paper: #ffffff;
   --color-line: #e7e4dc;
@@ -76,7 +78,7 @@ body {
   background-clip: content-box;
 }
 
-/* Search hits inside the job description panel. */
+/* Search hits and cue words inside the job description panel. */
 mark.jd-hit {
   background: #fdf0c4;
   color: inherit;
@@ -86,6 +88,111 @@ mark.jd-hit {
 mark.jd-hit-active {
   background: var(--color-gold);
   color: #fff;
+}
+mark.jd-cue {
+  background: color-mix(in srgb, var(--color-gold) 18%, transparent);
+  color: var(--color-ink);
+  border-radius: 2px;
+  padding: 0 1px;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-gold) 60%, transparent);
+  text-underline-offset: 2px;
+}
+
+/* The job description itself. Word job descriptions are usually laid out as
+   tables, so these styles have to make a converted .docx readable rather than
+   just handling paragraphs. */
+.jd-body {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-ink-soft);
+}
+.jd-body > :first-child {
+  margin-top: 0;
+}
+.jd-body p {
+  margin: 0 0 0.65rem;
+}
+.jd-body h1,
+.jd-body h2,
+.jd-body h3,
+.jd-body h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-ink);
+  margin: 1.15rem 0 0.4rem;
+  line-height: 1.35;
+}
+.jd-body h1 { font-size: 15px; }
+.jd-body h2 { font-size: 14px; }
+.jd-body h3,
+.jd-body h4 { font-size: 13px; }
+.jd-body strong,
+.jd-body b {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+.jd-body ul,
+.jd-body ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+.jd-body ul { list-style: disc; }
+.jd-body ol { list-style: decimal; }
+.jd-body li { margin-bottom: 0.3rem; }
+.jd-body a {
+  color: var(--color-brand);
+  text-decoration: underline;
+}
+/* Letterheads and logos are embedded in most job descriptions; keep them from
+   taking over the reading panel. */
+.jd-body img {
+  max-width: 100%;
+  max-height: 84px;
+  width: auto;
+  height: auto;
+}
+.jd-body hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 1rem 0;
+}
+
+/* Tables carry most of the content in a typical job description. */
+.jd-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1rem;
+  font-size: 12.5px;
+  /* A wide table scrolls inside itself rather than pushing the panel out. */
+  display: block;
+  overflow-x: auto;
+}
+.jd-body table tbody {
+  display: table;
+  width: 100%;
+}
+.jd-body td,
+.jd-body th {
+  border: 1px solid var(--color-line);
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+  text-align: left;
+}
+.jd-body th {
+  background: var(--color-line-soft);
+  font-weight: 600;
+  color: var(--color-ink);
+}
+/* Word often uses a borderless single-column table purely for layout; those
+   should read as prose, not as a grid. */
+.jd-body table tr > td:only-child {
+  border-left: 0;
+  border-right: 0;
+}
+.jd-body td > p:last-child,
+.jd-body th > p:last-child {
+  margin-bottom: 0;
 }
 
 @media print {

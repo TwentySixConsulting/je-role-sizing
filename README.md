@@ -6,17 +6,21 @@ other, and get the points total and contribution band at the end.
 
 **Live: https://twentysixconsulting.github.io/je-role-sizing/**
 
-> **This site is public.** GitHub Pages cannot be password-protected without a
-> backend, and Pages needs a public repository on this account's plan. Anyone
-> with the URL can open the tool and read the scheme criteria. The page is
-> marked `noindex` so it should not appear in search results, but that is
-> obscurity, not access control. To put it behind a real login, follow
-> `SETUP.md` — the same step that gives the team a shared library.
+## Two things to understand before relying on it
 
-**Roles are not shared.** Each consultant's work lives in their own browser, so
-two people using the link do not see each other's roles. Use **Backup** and
-**Restore** to pass work between people, or turn on Supabase (`SETUP.md`) for a
-single shared library.
+**The sign-in is a doorway, not a lock.** Usernames and passwords are baked in
+at build time from the `VITE_APP_USERS` repository secret, stored as SHA-256
+hashes rather than plain text. But a static site has to ship whatever it checks
+against, so somebody determined can read past it. It keeps the tool out of
+casual view. `SETUP.md` turns it into a real, server-enforced login.
+
+**Roles are not shared between people.** Each consultant's work lives in their
+own browser, so two people using the link do not see each other's roles. This
+is not a setting - static hosting has nowhere to put shared data. Use **Backup**
+and **Restore** to move work between people, or follow `SETUP.md` to switch on
+the shared library.
+
+Both are fixed by the same step, and it is short.
 
 ## Running it
 
@@ -122,29 +126,26 @@ If you decide Context & Impact should have a seventh level, add it to
 
 ## Where the data lives
 
-Two modes, chosen automatically by whether the Supabase environment variables
-are set:
+Chosen automatically by which environment variables are present at build time.
 
-**Shared (production).** Roles, scores, reasons and uploaded job descriptions
-live in TwentySix's own Supabase project. Every consultant who types the team
-password sees the same library, and a colleague's changes appear without a
-reload. Row level security grants access only to an authenticated session, so
-the publishable key shipped in the JavaScript reads nothing on its own — the
-password is enforced by the database. See `SETUP.md`.
+**Browser only (what the live site does today).** Roles, scores, reasons and
+uploaded job descriptions stay in that browser's IndexedDB, and a "Local copy"
+badge appears in the header. Nothing is shared and clearing browser data loses
+it.
 
-**Local (no Supabase configured).** Everything stays in this browser's
-IndexedDB and a "Local copy" badge appears in the header. Useful for
-development, and it means the app still starts if the environment variables are
-missing rather than showing an error.
+**Shared (once Supabase is configured).** The same data lives in TwentySix's own
+Supabase project. Everyone who signs in sees one library, a colleague's changes
+arrive without a reload, and row level security means the publishable key in the
+JavaScript reads nothing until someone has actually signed in - so the password
+becomes real. See `SETUP.md`.
 
 `src/lib/backend.ts` is the seam: one interface, two implementations
-(`backendLocal.ts`, `backendSupabase.ts`). Nothing above it knows which is in
-use.
+(`backendLocal.ts`, `backendSupabase.ts`). Nothing above it knows which is
+in use.
 
-Either way, **Backup** writes a JSON file and **Restore** loads one, which is
-how you keep a point-in-time copy or hand a set of roles to someone outside the
-team. A restore overwrites any role with a matching id and leaves the rest
-alone.
+**Backup** writes a JSON file and **Restore** loads one, in either mode. A
+restore overwrites any role with a matching id and leaves the rest alone, so two
+people can merge by exchanging files.
 
 ## Layout
 

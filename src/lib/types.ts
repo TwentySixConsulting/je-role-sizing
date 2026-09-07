@@ -45,7 +45,7 @@ export interface Settings {
   /** Contribution bands - editable so a client's own structure can be used. */
   bands: import('../scheme/bands').Band[]
   /** Last sort choice on the library, so it survives a reload. */
-  librarySort: 'points-desc' | 'points-asc' | 'title' | 'updated'
+  librarySort: 'points-desc' | 'points-asc' | 'title' | 'added' | 'updated'
 }
 
 export interface StoredFile {
