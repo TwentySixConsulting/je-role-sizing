@@ -4,8 +4,19 @@ A consultant's tool for sizing roles against the TwentySix role sizing scheme.
 Read the job description on one side, work through the eleven factors on the
 other, and get the points total and contribution band at the end.
 
-Everything runs in the browser. Nothing is uploaded anywhere, so client job
-descriptions never leave the machine.
+**Live: https://twentysixconsulting.github.io/je-role-sizing/**
+
+> **This site is public.** GitHub Pages cannot be password-protected without a
+> backend, and Pages needs a public repository on this account's plan. Anyone
+> with the URL can open the tool and read the scheme criteria. The page is
+> marked `noindex` so it should not appear in search results, but that is
+> obscurity, not access control. To put it behind a real login, follow
+> `SETUP.md` — the same step that gives the team a shared library.
+
+**Roles are not shared.** Each consultant's work lives in their own browser, so
+two people using the link do not see each other's roles. Use **Backup** and
+**Restore** to pass work between people, or turn on Supabase (`SETUP.md`) for a
+single shared library.
 
 ## Running it
 
@@ -13,6 +24,9 @@ descriptions never leave the machine.
 npm install
 npm run dev      # http://localhost:5180
 ```
+
+Pushing to `main` rebuilds and republishes the live site automatically
+(`.github/workflows/deploy.yml`).
 
 To build a static copy you can host or open from a shared folder:
 
