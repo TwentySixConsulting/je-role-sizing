@@ -108,17 +108,33 @@ create policy je_settings_team_access
 
 -- Private bucket for the original uploaded job descriptions, so a consultant
 -- can reopen the source Word or PDF file later.
-insert into storage.buckets (id, name, public, file_size_limit)
-values ('je-job-descriptions', 'je-job-descriptions', false, 26214400)
-on conflict (id) do update set public = false, file_size_limit = 26214400;
+--
+-- The storage and realtime steps below are wrapped so that a permissions error
+-- reports itself as a notice instead of rolling back the tables above. The app
+-- works without them: only "open the original file" and live refresh are lost.
+do $$
+begin
+  insert into storage.buckets (id, name, public, file_size_limit)
+  values ('je-job-descriptions', 'je-job-descriptions', false, 26214400)
+  on conflict (id) do update set public = false, file_size_limit = 26214400;
+exception when others then
+  raise notice 'Could not create the storage bucket (%). Create "je-job-descriptions" as a private bucket in Storage instead.', sqlerrm;
+end
+$$;
 
-drop policy if exists je_files_team_access on storage.objects;
-create policy je_files_team_access
-  on storage.objects
-  for all
-  to authenticated
-  using (bucket_id = 'je-job-descriptions')
-  with check (bucket_id = 'je-job-descriptions');
+do $$
+begin
+  drop policy if exists je_files_team_access on storage.objects;
+  create policy je_files_team_access
+    on storage.objects
+    for all
+    to authenticated
+    using (bucket_id = 'je-job-descriptions')
+    with check (bucket_id = 'je-job-descriptions');
+exception when others then
+  raise notice 'Could not add the storage policy (%). Add it from Storage > Policies instead.', sqlerrm;
+end
+$$;
 
 -- --------------------------------------------------------------- realtime ---
 
@@ -131,5 +147,13 @@ begin
   ) then
     alter publication supabase_realtime add table public.je_roles;
   end if;
+exception when others then
+  raise notice 'Could not enable realtime (%). Turn it on for je_roles under Database > Replication.', sqlerrm;
 end
 $$;
+
+-- ------------------------------------------------------------------ done ----
+
+select 'Role sizing tables ready' as status,
+       (select count(*) from public.je_roles)    as roles,
+       (select count(*) from public.je_settings) as settings_rows;
