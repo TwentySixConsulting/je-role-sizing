@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Poppins', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* TwentySix brand */
+  --color-ink: #131a2e;
+  --color-ink-soft: #39415a;
+  --color-muted: #6f7382;
+  --color-faint: #9a9daa;
+  --color-gold: #c9a84c;
+  --color-gold-deep: #a2842f;
+  --color-gold-wash: #f6efdb;
+  --color-cream: #faf9f6;
+  --color-paper: #ffffff;
+  --color-line: #e7e4dc;
+  --color-line-soft: #f1efe8;
+
+  /* Cornerstone series - validated as a 4-slot categorical palette
+     against the #faf9f6 surface (see README). Every use is directly
+     labelled, which is the required relief for the aqua slot's
+     sub-3:1 contrast. */
+  --color-cs-knowhow: #2a78d6;
+  --color-cs-people: #eb6834;
+  --color-cs-thinking: #1baf7a;
+  --color-cs-delivery: #4a3aa7;
+
+  --color-good: #1a7f4b;
+  --color-warn: #b9791b;
+  --color-danger: #b5342a;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  margin: 0;
+  overscroll-behavior-y: none;
+}
+
+/* Numeric columns should line up wherever points are shown. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.011em;
+}
+
+/* Restrained scrollbars - these panels scroll constantly while scoring. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: #d6d2c7 transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: #d9d5ca;
+  border: 3px solid transparent;
+  border-radius: 99px;
+  background-clip: content-box;
+}
+.scroll-slim::-webkit-scrollbar-thumb:hover {
+  background: #c2bdae;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Search hits inside the job description panel. */
+mark.jd-hit {
+  background: #fdf0c4;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.jd-hit-active {
+  background: var(--color-gold);
+  color: #fff;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-break {
+    break-inside: avoid;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise {
+  animation: rise 0.18s ease-out both;
+}
